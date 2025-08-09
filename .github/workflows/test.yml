@@ -59,52 +59,54 @@ jobs:
         
     - name: Run unit tests
       run: |
-        # Create a simple test script
+        # Create a simple test script using traditional gjs syntax
         cat > test_extension.js << 'EOF'
-        #!/usr/bin/env gjs
-        
-        import GLib from 'gi://GLib';
-        import Gio from 'gi://Gio';
-        
-        // Test schema compilation
+        const GLib = imports.gi.GLib;
+        const Gio = imports.gi.Gio;
+        const System = imports.system;
+
+        function print(msg) {
+            log(msg);
+        }
+
         try {
+            const schemaDir = './schemas';
+            print(`Checking for schema source in: ${schemaDir}`);
+
             const schemaSource = Gio.SettingsSchemaSource.new_from_directory(
-                './schemas',
+                schemaDir,
                 Gio.SettingsSchemaSource.get_default(),
                 false
             );
             
-            const schema = schemaSource.lookup('org.gnome.shell.extensions.minimize-dimmer', false);
-            
-            if (schema) {
-                print('✓ GSettings schema loaded successfully');
-                
-                // Test settings creation
-                const settings = new Gio.Settings({
-                    settings_schema: schema
-                });
-                
-                // Test default values
-                const opacity = settings.get_int('dimmed-opacity');
-                const duration = settings.get_int('animation-duration');
-                const enabled = settings.get_boolean('enable-dimming');
-                
-                print(`✓ Default opacity: ${opacity}`);
-                print(`✓ Default animation duration: ${duration}`);
-                print(`✓ Default enabled state: ${enabled}`);
-                
-                // Test setting values
-                settings.set_int('dimmed-opacity', 50);
-                if (settings.get_int('dimmed-opacity') === 50) {
-                    print('✓ Setting opacity works');
-                }
-                
-            } else {
-                print('✗ Failed to load schema');
-                System.exit(1);
+            const schemaId = 'org.gnome.shell.extensions.minimize-dimmer';
+            const schema = schemaSource.lookup(schemaId, false);
+
+            if (!schema) {
+                throw new Error(`Schema ${schemaId} not found`);
             }
+            print(`✓ GSettings schema loaded successfully`);
+
+            const settings = new Gio.Settings({ settings_schema: schema });
+            
+            const opacity = settings.get_int('dimmed-opacity');
+            if (opacity === 40) {
+                print(`✓ Default opacity is correct: ${opacity}`);
+            } else {
+                throw new Error(`Default opacity is wrong: ${opacity}`);
+            }
+
+            settings.set_int('dimmed-opacity', 50);
+            if (settings.get_int('dimmed-opacity') === 50) {
+                print('✓ Setting opacity works');
+            } else {
+                throw new Error('Setting opacity failed');
+            }
+
+            print('✓ All unit tests passed');
+
         } catch (e) {
-            print(`✗ Error: ${e.message}`);
+            printerr(`✗ Test failed: ${e.message}`);
             System.exit(1);
         }
         EOF
