@@ -1,5 +1,8 @@
 # Minimize Dimmer - GNOME Shell Extension
 
+[![Test GNOME Extension](https://github.com/leobenkel/gnome-extension-minimize-dimmer/actions/workflows/test.yml/badge.svg)](https://github.com/leobenkel/gnome-extension-minimize-dimmer/actions/workflows/test.yml)
+[![Docker Test](https://github.com/leobenkel/gnome-extension-minimize-dimmer/actions/workflows/docker-test.yml/badge.svg)](https://github.com/leobenkel/gnome-extension-minimize-dimmer/actions/workflows/docker-test.yml)
+
 A GNOME Shell extension that visually distinguishes minimized windows in the Activities Overview by dimming their opacity and optionally scaling them down.
 
 ## Features
@@ -63,13 +66,61 @@ minimize-dimmer/
 ├── extension.js       # Main extension code
 ├── stylesheet.css     # Visual styling
 ├── prefs.js          # Preferences window (optional)
-└── install.sh        # Installation script
+├── install.sh        # Installation script
+├── test.sh           # Local testing script
+└── .github/
+    └── workflows/    # CI/CD pipelines
 ```
 
 ### Testing Changes
 1. Make your changes
 2. Restart GNOME Shell (Alt+F2 → 'r' on X11)
 3. Check logs: `journalctl -f -o cat /usr/bin/gnome-shell`
+
+### Automated Testing
+
+This project includes comprehensive CI/CD testing:
+
+#### Local Testing
+```bash
+# Test in a nested GNOME session (safe)
+./test.sh
+
+# Or manually in nested session
+dbus-run-session -- gnome-shell --nested --wayland
+```
+
+#### GitHub Actions CI
+The repository includes three automated workflows:
+
+1. **test.yml**: Main testing pipeline
+   - Validates metadata.json
+   - Checks JavaScript syntax
+   - Compiles GSettings schemas
+   - Runs unit tests
+   - Tests installation process
+
+2. **docker-test.yml**: Containerized testing
+   - Tests in isolated Ubuntu 24.04 environment
+   - Ensures clean installation
+   - Creates distributable package
+
+3. **release.yml**: Automated releases
+   - Triggers on version tags (v*)
+   - Creates packaged extension
+   - Publishes GitHub releases
+
+#### Running Tests Locally
+```bash
+# Using Docker (most reliable)
+docker build -t minimize-dimmer-test -f Dockerfile.test .
+docker run --rm minimize-dimmer-test
+
+# Using virtual display
+Xvfb :99 -screen 0 1920x1080x24 &
+export DISPLAY=:99
+gjs test_extension.js
+```
 
 ## Troubleshooting
 

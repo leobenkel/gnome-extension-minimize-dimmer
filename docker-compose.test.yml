@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: minimize-dimmer-test
+    ports:
+      - "5900:5900"  # VNC port
+      - "6080:6080"  # noVNC web port
+    environment:
+      - DISPLAY=:99
+    volumes:
+      # Mount the extension source for live testing
+      - ./extension.js:/home/testuser/extension/extension.js:ro
+      - ./prefs.js:/home/testuser/extension/prefs.js:ro
+      - ./metadata.json:/home/testuser/extension/metadata.json:ro
+      - ./schemas:/home/testuser/extension/schemas:rw
+    networks:
+      - test-network
+    cap_add:
+      - SYS_ADMIN  # Needed for some GNOME Shell operations
+    security_opt:
+      - seccomp:unconfined  # Needed for full X11 functionality
+
+  test-interactive:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: minimize-dimmer-interactive
+    ports:
+      - "5901:5900"  # Different VNC port for interactive session
+      - "6081:6080"  # Different noVNC port
+    environment:
+      - DISPLAY=:99
+    volumes:
+      - ./:/home/testuser/extension:ro
+    networks:
+      - test-network
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    command: |
+      /bin/bash -c "
+        sudo /usr/bin/supervisord -c /etc/supervisor/supervisord.conf &
+        sleep 5
+        echo '========================================='
+        echo '  Interactive Test Environment Ready'
+        echo '========================================='
+        echo ''
+        echo 'VNC: localhost:5901 (password: testpass)'
+        echo 'Web: http://localhost:6081/vnc.html'
+        echo ''
+        echo 'Run these commands to test:'
+        echo '  cd /home/testuser/extension'
+        echo '  ./install.sh'
+        echo '  gnome-extensions enable minimize-dimmer@leobenkel.com'
+        echo ''
+        exec /bin/bash
+      "
+    stdin_open: true
+    tty: true
+
+networks:
+  test-network:
+    driver: bridge

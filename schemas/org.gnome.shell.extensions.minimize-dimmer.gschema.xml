@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.minimize-dimmer" 
+          path="/org/gnome/shell/extensions/minimize-dimmer/">
+    
+    <key name="dimmed-opacity" type="i">
+      <default>40</default>
+      <summary>Opacity for minimized windows</summary>
+      <description>
+        The opacity level for minimized windows (0-100).
+        0 is completely transparent, 100 is completely opaque.
+      </description>
+      <range min="0" max="100"/>
+    </key>
+    
+    <key name="animation-duration" type="i">
+      <default>200</default>
+      <summary>Animation duration</summary>
+      <description>
+        Duration of the fade animation in milliseconds.
+      </description>
+      <range min="0" max="1000"/>
+    </key>
+    
+    <key name="enable-dimming" type="b">
+      <default>true</default>
+      <summary>Enable dimming effect</summary>
+      <description>
+        Whether to apply the dimming effect to minimized windows.
+      </description>
+    </key>
+    
+    <key name="affect-all-windows" type="b">
+      <default>false</default>
+      <summary>Apply to all window types</summary>
+      <description>
+        Whether to apply dimming to all window types including dialogs and popups,
+        or just regular application windows.
+      </description>
+    </key>
+    
+  </schema>
+</schemalist>
