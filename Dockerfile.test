@@ -1,0 +1,118 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
+ENV GDK_BACKEND=x11
+ENV XDG_RUNTIME_DIR=/tmp/runtime-testuser
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session
+
+# Install GNOME Shell and dependencies
+RUN apt-get update && apt-get install -y \
+    gnome-shell \
+    gnome-shell-extensions \
+    gjs \
+    xvfb \
+    dbus-x11 \
+    gnome-session \
+    mutter \
+    gir1.2-gtk-4.0 \
+    gir1.2-adw-1 \
+    gir1.2-glib-2.0 \
+    libglib2.0-dev \
+    x11-utils \
+    python3 \
+    git \
+    sudo \
+    x11vnc \
+    novnc \
+    websockify \
+    supervisor \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create test user with sudo privileges
+RUN useradd -m -s /bin/bash testuser && \
+    echo "testuser:testuser" | chpasswd && \
+    usermod -aG sudo testuser && \
+    echo "testuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Create necessary directories
+RUN mkdir -p /tmp/runtime-testuser && \
+    chmod 700 /tmp/runtime-testuser && \
+    chown testuser:testuser /tmp/runtime-testuser
+
+# Setup VNC for remote viewing (optional)
+RUN mkdir -p /home/testuser/.vnc && \
+    x11vnc -storepasswd testpass /home/testuser/.vnc/passwd && \
+    chown -R testuser:testuser /home/testuser/.vnc
+
+# Copy extension files
+WORKDIR /home/testuser/extension
+COPY --chown=testuser:testuser . .
+
+# Create supervisor config for managing services
+RUN printf '[supervisord]\n\
+nodaemon=true\n\
+user=root\n\
+\n\
+[program:xvfb]\n\
+command=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset\n\
+autorestart=true\n\
+user=root\n\
+priority=1\n\
+\n\
+[program:dbus]\n\
+command=/usr/bin/dbus-daemon --session --address=unix:path=/tmp/dbus-session --nofork --nopidfile\n\
+autorestart=true\n\
+user=testuser\n\
+priority=1\n' > /etc/supervisor/conf.d/services.conf
+
+# Create test runner script
+RUN printf '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "========================================"\n\
+echo "  GNOME Extension Containerized Test"\n\
+echo "========================================"\n\
+echo ""\n\
+echo "Step 1: Compiling GSettings schemas..."\n\
+cd /home/testuser/extension\n\
+glib-compile-schemas ./schemas/ || exit 1\n\
+echo "✓ Schemas compiled successfully"\n\
+\n\
+echo ""\n\
+echo "Step 2: Validating metadata.json..."\n\
+python3 -m json.tool metadata.json > /dev/null || exit 1\n\
+echo "✓ metadata.json is valid"\n\
+\n\
+echo ""\n\
+echo "Step 3: Checking required files..."\n\
+for file in extension.js prefs.js metadata.json schemas/org.gnome.shell.extensions.minimize-dimmer.gschema.xml; do\n\
+  if [ -f "$file" ]; then\n\
+    echo "✓ $file exists"\n\
+  else\n\
+    echo "✗ $file missing"\n\
+    exit 1\n\
+  fi\n\
+done\n\
+\n\
+echo ""\n\
+echo "Step 4: Installing extension..."\n\
+mkdir -p ~/.local/share/gnome-shell/extensions/\n\
+ln -sf /home/testuser/extension ~/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com\n\
+echo "✓ Extension installed successfully"\n\
+\n\
+echo ""\n\
+echo "======================================="\n\
+echo "✓ All tests completed successfully!"\n\
+echo "======================================="\n' > /home/testuser/run_tests.sh
+
+RUN chmod +x /home/testuser/run_tests.sh && \
+    chown testuser:testuser /home/testuser/run_tests.sh
+
+# Switch to test user
+USER testuser
+WORKDIR /home/testuser/extension
+
+# Entry point - just run the tests without supervisor for CI
+CMD ["/home/testuser/run_tests.sh"]
