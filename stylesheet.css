@@ -7,6 +7,6 @@
 .minimized-dimmed {
     /* Default values are provided but will be overridden by the extension */
     opacity: var(--minimized-dimmed-opacity, 0.4);
-    transform: var(--minimized-dimmed-scale, 1.0);
+    transform: scale(var(--minimized-dimmed-scale, 1.0));
     transition: all var(--minimized-dimmed-duration, 200ms) ease-out;
 }

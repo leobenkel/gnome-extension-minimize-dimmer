@@ -23,12 +23,10 @@ export default class MinimizeDimmerExtension extends Extension {
     }
 
     enable() {
-        console.log('MinimizeDimmer: Enabling extension');
-        
         this._settings = this.getSettings();
         
         // Load and apply stylesheet
-        this._stylesheet = this.pathToFileURL('stylesheet.css').get_path();
+        this._stylesheet = this.dir.get_child('stylesheet.css').get_path();
         St.ThemeContext.get_for_stage(global.stage).get_theme().load_stylesheet(this._stylesheet);
         this._updateStyle();
 
@@ -158,8 +156,6 @@ export default class MinimizeDimmerExtension extends Extension {
     }
 
     disable() {
-        console.log('MinimizeDimmer: Disabling extension');
-        
         // Restore all windows
         this._minimizedWindows.forEach(windowActor => this._removeEffect(windowActor));
 

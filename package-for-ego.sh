@@ -16,7 +16,13 @@ echo "===================================="
 # Clean console.log statements for production
 echo -e "${YELLOW}Removing debug console.log statements...${NC}"
 cp extension.js extension.js.bak
-sed -i "s/console\.log/\/\/ console\.log/g" extension.js
+# Use a proper tool to avoid accidentally commenting out console.log in strings
+if command -v npx &> /dev/null; then
+    npx strip-console extension.js > extension.js.stripped && mv extension.js.stripped extension.js
+else
+    echo -e "${YELLOW}npx not found, falling back to sed. Install Node.js for a safer strip.${NC}"
+    sed -i "s/console\.log/\/\/ console\.log/g" extension.js
+fi
 
 # Compile schemas
 echo -e "${YELLOW}Compiling schemas...${NC}"
