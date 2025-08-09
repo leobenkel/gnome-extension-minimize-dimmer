@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Compile schemas
+      run: glib-compile-schemas ./schemas/
+      
+    - name: Update version in metadata.json
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        python3 << EOF
+        import json
+        
+        with open('metadata.json', 'r') as f:
+            metadata = json.load(f)
+        
+        metadata['version'] = int('${VERSION}'.replace('.', ''))
+        
+        with open('metadata.json', 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print(f"Updated version to: {metadata['version']}")
+        EOF
+        
+    - name: Create release package
+      run: |
+        EXTENSION_NAME="minimize-dimmer"
+        VERSION=${GITHUB_REF#refs/tags/}
+        PACKAGE_NAME="${EXTENSION_NAME}-${VERSION}.zip"
+        
+        # Create clean package
+        zip -r "${PACKAGE_NAME}" \
+          metadata.json \
+          extension.js \
+          prefs.js \
+          schemas/ \
+          README.md \
+          LICENSE \
+          -x "*.git*" \
+          -x "*.github*" \
+          -x "*test*" \
+          -x "*Dockerfile*" \
+          -x "*.sh" \
+          -x "*node_modules*"
+        
+        echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+        echo "Package created: ${PACKAGE_NAME}"
+        ls -lh "${PACKAGE_NAME}"
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.PACKAGE_NAME }}
+        generate_release_notes: true
+        body: |
+          ## Installation
+          
+          1. Download the `.zip` file from the assets below
+          2. Install using GNOME Extensions Manager or manually:
+          
+          ```bash
+          gnome-extensions install --force minimize-dimmer-${{ github.ref_name }}.zip
+          gnome-extensions enable minimize-dimmer@leobenkel.com
+          ```
+          
+          ## What's Changed
+          See the automated changelog below for details.
+          
+        draft: false
+        prerelease: false

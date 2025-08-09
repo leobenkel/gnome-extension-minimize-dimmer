@@ -1,0 +1,12 @@
+{
+  "name": "Minimize Dimmer",
+  "description": "Dims windows when they are minimized, making it easier to see which windows are minimized",
+  "uuid": "minimize-dimmer@leobenkel.com",
+  "version": 1,
+  "shell-version": ["46"],
+  "url": "https://github.com/leobenkel/gnome-extension-minimize-dimmer",
+  "settings-schema": "org.gnome.shell.extensions.minimize-dimmer",
+  "donations": {
+    "github": "leobenkel"
+  }
+}

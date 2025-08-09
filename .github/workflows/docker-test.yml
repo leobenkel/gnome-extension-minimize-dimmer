@@ -1,0 +1,43 @@
+name: Docker Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build test Docker image
+      run: |
+        docker build -t minimize-dimmer-test -f Dockerfile.test .
+        
+    - name: Run tests in Docker
+      run: |
+        docker run --rm minimize-dimmer-test
+        
+    - name: Test packaging
+      run: |
+        # Create a package for distribution
+        mkdir -p dist
+        zip -r dist/minimize-dimmer.zip \
+          metadata.json \
+          extension.js \
+          prefs.js \
+          schemas/ \
+          -x "*.git*" \
+          -x "*node_modules*" \
+          -x "dist/*"
+        
+        echo "✓ Extension package created: $(ls -lh dist/minimize-dimmer.zip | awk '{print $5}')"
+        
+    - name: Upload package
+      uses: actions/upload-artifact@v4
+      with:
+        name: extension-package
+        path: dist/minimize-dimmer.zip

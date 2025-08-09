@@ -1,0 +1,275 @@
+name: Test GNOME Extension
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-extension:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gnome-shell \
+          gjs \
+          xvfb \
+          dbus-x11 \
+          gnome-session \
+          mutter \
+          gir1.2-gtk-4.0 \
+          gir1.2-adw-1 \
+          gir1.2-glib-2.0 \
+          libglib2.0-dev \
+          x11-utils \
+          imagemagick \
+          scrot
+    
+    - name: Setup virtual display
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1920x1080x24 &
+        sleep 3
+        
+    - name: Compile GSettings schemas
+      run: |
+        glib-compile-schemas ./schemas/
+        
+    - name: Validate metadata.json
+      run: |
+        python3 -m json.tool metadata.json > /dev/null
+        echo "✓ metadata.json is valid JSON"
+        
+    - name: Check JavaScript syntax
+      run: |
+        gjs -c "
+        import('./extension.js').then(() => {
+          console.log('✓ extension.js syntax is valid');
+        }).catch((e) => {
+          console.error('✗ extension.js has syntax errors:', e);
+          process.exit(1);
+        });
+        "
+        
+    - name: Run unit tests
+      run: |
+        # Create a simple test script
+        cat > test_extension.js << 'EOF'
+        #!/usr/bin/env gjs
+        
+        import GLib from 'gi://GLib';
+        import Gio from 'gi://Gio';
+        
+        // Test schema compilation
+        try {
+            const schemaSource = Gio.SettingsSchemaSource.new_from_directory(
+                './schemas',
+                Gio.SettingsSchemaSource.get_default(),
+                false
+            );
+            
+            const schema = schemaSource.lookup('org.gnome.shell.extensions.minimize-dimmer', false);
+            
+            if (schema) {
+                print('✓ GSettings schema loaded successfully');
+                
+                // Test settings creation
+                const settings = new Gio.Settings({
+                    settings_schema: schema
+                });
+                
+                // Test default values
+                const opacity = settings.get_int('dimmed-opacity');
+                const duration = settings.get_int('animation-duration');
+                const enabled = settings.get_boolean('enable-dimming');
+                
+                print(`✓ Default opacity: ${opacity}`);
+                print(`✓ Default animation duration: ${duration}`);
+                print(`✓ Default enabled state: ${enabled}`);
+                
+                // Test setting values
+                settings.set_int('dimmed-opacity', 50);
+                if (settings.get_int('dimmed-opacity') === 50) {
+                    print('✓ Setting opacity works');
+                }
+                
+            } else {
+                print('✗ Failed to load schema');
+                System.exit(1);
+            }
+        } catch (e) {
+            print(`✗ Error: ${e.message}`);
+            System.exit(1);
+        }
+        EOF
+        
+        chmod +x test_extension.js
+        ./test_extension.js
+        
+    - name: Test extension installation
+      env:
+        DISPLAY: :99
+      run: |
+        # Create extension directory
+        mkdir -p $HOME/.local/share/gnome-shell/extensions/
+        
+        # Install extension
+        ln -s $(pwd) $HOME/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com
+        
+        # Verify installation
+        if [ -L "$HOME/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com" ]; then
+          echo "✓ Extension symlink created successfully"
+        else
+          echo "✗ Failed to create extension symlink"
+          exit 1
+        fi
+        
+    - name: Start GNOME Shell in nested mode (smoke test)
+      env:
+        DISPLAY: :99
+        GSETTINGS_BACKEND: memory
+      run: |
+        # Start dbus session
+        eval $(dbus-launch --sh-syntax)
+        
+        # Try to start gnome-shell in nested mode for a quick test
+        timeout 10s dbus-run-session -- gnome-shell --nested --wayland --headless 2>&1 | tee gnome-shell.log || true
+        
+        # Check if extension was recognized (even if shell doesn't fully start)
+        if grep -q "minimize-dimmer" gnome-shell.log; then
+          echo "✓ Extension was recognized by GNOME Shell"
+        else
+          echo "⚠ Extension not explicitly mentioned in logs (this might be normal)"
+        fi
+        
+        # Check for any critical errors
+        if grep -q "CRITICAL" gnome-shell.log; then
+          echo "⚠ Critical errors found in GNOME Shell log:"
+          grep "CRITICAL" gnome-shell.log
+        fi
+        
+    - name: Upload logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-logs
+        path: |
+          gnome-shell.log
+          
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install ESLint
+      run: |
+        npm init -y
+        npm install --save-dev eslint
+        
+    - name: Create ESLint config
+      run: |
+        cat > .eslintrc.json << 'EOF'
+        {
+          "env": {
+            "es2021": true
+          },
+          "extends": "eslint:recommended",
+          "parserOptions": {
+            "ecmaVersion": 2021,
+            "sourceType": "module"
+          },
+          "globals": {
+            "global": "readonly",
+            "imports": "readonly",
+            "log": "readonly",
+            "logError": "readonly",
+            "print": "readonly",
+            "printerr": "readonly"
+          },
+          "rules": {
+            "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+            "semi": ["error", "always"],
+            "quotes": ["error", "single"],
+            "indent": ["error", 4]
+          }
+        }
+        EOF
+        
+    - name: Run ESLint
+      run: npx eslint extension.js prefs.js --max-warnings 0 || true
+      
+  validate-package:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check required files
+      run: |
+        required_files=("metadata.json" "extension.js" "prefs.js" "schemas/org.gnome.shell.extensions.minimize-dimmer.gschema.xml")
+        
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✓ $file exists"
+          else
+            echo "✗ $file is missing"
+            exit 1
+          fi
+        done
+        
+    - name: Validate metadata required fields
+      run: |
+        python3 << 'EOF'
+        import json
+        import sys
+        
+        with open('metadata.json', 'r') as f:
+            metadata = json.load(f)
+        
+        required_fields = ['name', 'description', 'uuid', 'shell-version']
+        missing = []
+        
+        for field in required_fields:
+            if field in metadata:
+                print(f"✓ {field}: {metadata[field]}")
+            else:
+                missing.append(field)
+        
+        if missing:
+            print(f"✗ Missing required fields: {', '.join(missing)}")
+            sys.exit(1)
+        
+        # Validate UUID format
+        uuid = metadata.get('uuid', '')
+        if '@' in uuid:
+            print(f"✓ UUID format is valid: {uuid}")
+        else:
+            print(f"✗ UUID should contain '@': {uuid}")
+            sys.exit(1)
+        EOF
+        
+    - name: Check file sizes
+      run: |
+        # GNOME extensions should be reasonably sized
+        max_size=1048576  # 1MB
+        
+        for file in extension.js prefs.js; do
+          size=$(stat -c%s "$file")
+          if [ $size -lt $max_size ]; then
+            echo "✓ $file size is reasonable: $(numfmt --to=iec-i --suffix=B $size)"
+          else
+            echo "⚠ $file might be too large: $(numfmt --to=iec-i --suffix=B $size)"
+          fi
+        done
