@@ -16,188 +16,171 @@ export default class MinimizeDimmerExtension extends Extension {
         this._signalIds = [];
         this._settings = null;
         this._settingsChangedId = null;
+        this._overviewShowingId = null;
+        this._overviewHidingId = null;
+        this._overviewVisible = false;
+        this._stylesheet = null;
     }
 
     enable() {
         console.log('MinimizeDimmer: Enabling extension');
         
-        // Initialize settings
         this._settings = this.getSettings();
         
-        // Watch for settings changes
-        this._settingsChangedId = this._settings.connect('changed', () => {
-            this._updateAllWindows();
-        });
+        // Load and apply stylesheet
+        this._stylesheet = this.pathToFileURL('stylesheet.css').get_path();
+        St.ThemeContext.get_for_stage(global.stage).get_theme().load_stylesheet(this._stylesheet);
+        this._updateStyle();
+
+        this._settingsChangedId = this._settings.connect('changed', () => this._updateStyle());
         
-        // Connect to window manager signals
-        const display = global.display;
-        const windowTracker = Shell.WindowTracker.get_default();
-        
-        // Monitor existing windows
+        this._overviewShowingId = Main.overview.connect('showing', this._onOverviewShowing.bind(this));
+        this._overviewHidingId = Main.overview.connect('hiding', this._onOverviewHiding.bind(this));
+
         const windows = global.get_window_actors();
         windows.forEach(windowActor => {
             this._connectWindowSignals(windowActor);
-            this._checkWindowState(windowActor);
+            if (windowActor.meta_window.minimized) {
+                this._addMinimizedWindow(windowActor);
+            }
         });
         
-        // Monitor new windows
         this._signalIds.push(
             global.window_manager.connect('map', (wm, windowActor) => {
                 this._connectWindowSignals(windowActor);
             })
         );
         
-        // Monitor window minimize/unminimize
         this._signalIds.push(
             global.window_manager.connect('minimize', (wm, windowActor) => {
-                this._onWindowMinimized(windowActor);
+                this._addMinimizedWindow(windowActor);
             })
         );
         
         this._signalIds.push(
             global.window_manager.connect('unminimize', (wm, windowActor) => {
-                this._onWindowUnminimized(windowActor);
+                this._removeMinimizedWindow(windowActor);
             })
         );
         
-        // Monitor window destruction
         this._signalIds.push(
             global.window_manager.connect('destroy', (wm, windowActor) => {
                 this._disconnectWindowSignals(windowActor);
             })
         );
+
+        if (Main.overview.visible) {
+            this._onOverviewShowing();
+        }
     }
 
     _connectWindowSignals(windowActor) {
         const metaWindow = windowActor.meta_window;
-        if (!metaWindow) return;
-        
-        // Skip if already connected
-        if (this._windowActors.has(windowActor)) return;
+        if (!metaWindow || this._windowActors.has(windowActor)) return;
         
         const signalIds = [];
-        
-        // Monitor minimize state changes
         signalIds.push(
             metaWindow.connect('notify::minimized', () => {
-                this._checkWindowState(windowActor);
+                if (metaWindow.minimized) {
+                    this._addMinimizedWindow(windowActor);
+                } else {
+                    this._removeMinimizedWindow(windowActor);
+                }
             })
         );
-        
         this._windowActors.set(windowActor, signalIds);
-        
-        // Check initial state
-        if (metaWindow.minimized) {
-            this._onWindowMinimized(windowActor);
-        }
     }
 
     _disconnectWindowSignals(windowActor) {
         const signalIds = this._windowActors.get(windowActor);
-        if (!signalIds) return;
-        
-        const metaWindow = windowActor.meta_window;
-        if (metaWindow) {
-            signalIds.forEach(id => metaWindow.disconnect(id));
+        if (signalIds) {
+            const metaWindow = windowActor.meta_window;
+            if (metaWindow) {
+                signalIds.forEach(id => metaWindow.disconnect(id));
+            }
+            this._windowActors.delete(windowActor);
         }
-        
-        this._windowActors.delete(windowActor);
+        this._removeMinimizedWindow(windowActor);
+    }
+
+    _addMinimizedWindow(windowActor) {
+        if (!windowActor || this._minimizedWindows.has(windowActor)) return;
+        this._minimizedWindows.add(windowActor);
+        if (this._overviewVisible) {
+            this._applyEffect(windowActor);
+        }
+    }
+
+    _removeMinimizedWindow(windowActor) {
+        if (!windowActor || !this._minimizedWindows.has(windowActor)) return;
+        this._removeEffect(windowActor);
         this._minimizedWindows.delete(windowActor);
     }
 
-    _checkWindowState(windowActor) {
-        const metaWindow = windowActor.meta_window;
-        if (!metaWindow) return;
-        
-        if (metaWindow.minimized) {
-            this._onWindowMinimized(windowActor);
-        } else {
-            this._onWindowUnminimized(windowActor);
-        }
+    _onOverviewShowing() {
+        this._overviewVisible = true;
+        this._minimizedWindows.forEach(windowActor => this._applyEffect(windowActor));
     }
 
-    _onWindowMinimized(windowActor) {
-        if (!windowActor || this._minimizedWindows.has(windowActor)) return;
-        
-        // Check if dimming is enabled
+    _onOverviewHiding() {
+        this._overviewVisible = false;
+        this._minimizedWindows.forEach(windowActor => this._removeEffect(windowActor));
+    }
+
+    _applyEffect(windowActor) {
         if (!this._settings.get_boolean('enable-dimming')) return;
         
-        // Check window type if needed
         if (!this._settings.get_boolean('affect-all-windows')) {
             const metaWindow = windowActor.meta_window;
             if (metaWindow && metaWindow.get_window_type() !== Meta.WindowType.NORMAL) {
                 return;
             }
         }
-        
-        console.log('MinimizeDimmer: Window minimized, applying dim effect');
-        this._minimizedWindows.add(windowActor);
-        
-        // Get settings values
-        const opacity = Math.round(this._settings.get_int('dimmed-opacity') * 255 / 100);
-        const duration = this._settings.get_int('animation-duration');
-        
-        // Apply dimming effect
-        windowActor.ease({
-            opacity: opacity,
-            duration: duration,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD
-        });
+        windowActor.add_style_class_name('minimized-dimmed');
     }
 
-    _onWindowUnminimized(windowActor) {
-        if (!windowActor || !this._minimizedWindows.has(windowActor)) return;
-        
-        console.log('MinimizeDimmer: Window unminimized, removing dim effect');
-        this._minimizedWindows.delete(windowActor);
-        
-        const duration = this._settings.get_int('animation-duration');
-        
-        // Remove dimming effect
-        windowActor.ease({
-            opacity: 255,
-            duration: duration,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD
-        });
+    _removeEffect(windowActor) {
+        windowActor.remove_style_class_name('minimized-dimmed');
     }
 
-    _updateAllWindows() {
-        // Update all minimized windows with new settings
-        this._minimizedWindows.forEach(windowActor => {
-            if (!this._settings.get_boolean('enable-dimming')) {
-                // If dimming is disabled, restore all windows
-                windowActor.opacity = 255;
-            } else {
-                // Update with new opacity
-                const opacity = Math.round(this._settings.get_int('dimmed-opacity') * 255 / 100);
-                windowActor.opacity = opacity;
-            }
-        });
+    _updateStyle() {
+        const opacity = this._settings.get_int('dimmed-opacity') / 100.0;
+        const duration = this._settings.get_int('animation-duration');
+        const scale = this._settings.get_double('scale-factor');
+
+        const style = `
+            --minimized-dimmed-opacity: ${opacity};
+            --minimized-dimmed-scale: ${scale};
+            --minimized-dimmed-duration: ${duration}ms;
+        `;
+        // Applying style to uiGroup ensures it's available globally for window actors
+        Main.uiGroup.style = style;
     }
 
     disable() {
         console.log('MinimizeDimmer: Disabling extension');
         
-        // Disconnect settings
+        // Restore all windows
+        this._minimizedWindows.forEach(windowActor => this._removeEffect(windowActor));
+
         if (this._settingsChangedId) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;
         }
+
+        if (this._overviewShowingId) {
+            Main.overview.disconnect(this._overviewShowingId);
+            this._overviewShowingId = null;
+        }
+        if (this._overviewHidingId) {
+            Main.overview.disconnect(this._overviewHidingId);
+            this._overviewHidingId = null;
+        }
         
-        // Disconnect global signals
-        this._signalIds.forEach(id => {
-            global.window_manager.disconnect(id);
-        });
+        this._signalIds.forEach(id => global.window_manager.disconnect(id));
         this._signalIds = [];
         
-        // Restore all windows and disconnect signals
         this._windowActors.forEach((signalIds, windowActor) => {
-            // Restore opacity
-            if (this._minimizedWindows.has(windowActor)) {
-                windowActor.opacity = 255;
-            }
-            
-            // Disconnect window signals
             const metaWindow = windowActor.meta_window;
             if (metaWindow) {
                 signalIds.forEach(id => metaWindow.disconnect(id));
@@ -206,5 +189,12 @@ export default class MinimizeDimmerExtension extends Extension {
         
         this._windowActors.clear();
         this._minimizedWindows.clear();
+
+        // Unload stylesheet and clear style
+        if (this._stylesheet) {
+            St.ThemeContext.get_for_stage(global.stage).get_theme().unload_stylesheet(this._stylesheet);
+            this._stylesheet = null;
+        }
+        Main.uiGroup.style = '';
     }
 }

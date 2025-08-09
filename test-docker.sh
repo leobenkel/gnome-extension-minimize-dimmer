@@ -52,11 +52,11 @@ if [ "$MODE" == "interactive" ]; then
     echo "  3. Use the terminal to run commands"
     echo ""
     echo -e "${YELLOW}Building container...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml build test-interactive
+    sudo $DOCKER_COMPOSE -f docker-compose.test.yml build test-interactive
     
     echo ""
     echo -e "${GREEN}Starting interactive container...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-interactive
+    sudo $DOCKER_COMPOSE -f docker-compose.test.yml run --rm test-interactive
     
 else
     echo -e "${GREEN}Running automated tests...${NC}"
@@ -64,7 +64,7 @@ else
     
     # Build the test container
     echo -e "${YELLOW}Building test container...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml build test
+    sudo $DOCKER_COMPOSE -f docker-compose.test.yml build test
     
     if [ $? -ne 0 ]; then
         echo -e "${RED}Failed to build test container${NC}"
@@ -76,7 +76,7 @@ else
     echo ""
     
     # Run the tests
-    $DOCKER_COMPOSE -f docker-compose.test.yml up --abort-on-container-exit test
+    sudo $DOCKER_COMPOSE -f docker-compose.test.yml up --abort-on-container-exit test
     
     # Capture exit code
     EXIT_CODE=$?
@@ -84,7 +84,7 @@ else
     # Clean up
     echo ""
     echo -e "${YELLOW}Cleaning up...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml down
+    sudo $DOCKER_COMPOSE -f docker-compose.test.yml down
     
     if [ $EXIT_CODE -eq 0 ]; then
         echo ""

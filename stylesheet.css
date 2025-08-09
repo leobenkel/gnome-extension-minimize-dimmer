@@ -1,0 +1,12 @@
+/*
+ * Minimize Dimmer GNOME Shell Extension
+ *
+ * Defines the style for minimized windows.
+ * Uses CSS variables to allow for dynamic configuration from extension settings.
+ */
+.minimized-dimmed {
+    /* Default values are provided but will be overridden by the extension */
+    opacity: var(--minimized-dimmed-opacity, 0.4);
+    transform: var(--minimized-dimmed-scale, 1.0);
+    transition: all var(--minimized-dimmed-duration, 200ms) ease-out;
+}

@@ -42,6 +42,26 @@ export default class MinimizeDimmerPreferences extends ExtensionPreferences {
         
         group.add(opacityRow);
         
+        // Scale factor setting
+        const scaleRow = new Adw.SpinRow({
+            title: 'Scale Factor',
+            subtitle: 'Size of minimized windows (0.5 = 50%, 1.0 = 100%)',
+            adjustment: new Gtk.Adjustment({
+                lower: 0.5,
+                upper: 1.0,
+                step_increment: 0.05,
+                page_increment: 0.1,
+                value: settings.get_double('scale-factor'),
+            }),
+            digits: 2,
+        });
+
+        scaleRow.adjustment.connect('value-changed', (adjustment) => {
+            settings.set_double('scale-factor', adjustment.get_value());
+        });
+
+        group.add(scaleRow);
+
         // Animation duration setting
         const animationRow = new Adw.SpinRow({
             title: 'Animation Duration',
