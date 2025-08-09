@@ -109,8 +109,7 @@ jobs:
         }
         EOF
         
-        chmod +x test_extension.js
-        ./test_extension.js
+        gjs test_extension.js
         
     - name: Test extension installation
       env:
