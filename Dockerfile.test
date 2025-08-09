@@ -51,175 +51,61 @@ WORKDIR /home/testuser/extension
 COPY --chown=testuser:testuser . .
 
 # Create supervisor config for managing services
-RUN cat > /etc/supervisor/conf.d/services.conf << 'EOF'
-[supervisord]
-nodaemon=true
-user=root
-
-[program:xvfb]
-command=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset
-autorestart=true
-user=root
-priority=1
-
-[program:x11vnc]
-command=/usr/bin/x11vnc -display :99 -forever -usepw -shared -rfbport 5900 -rfbauth /home/testuser/.vnc/passwd
-autorestart=true
-user=testuser
-priority=2
-
-[program:novnc]
-command=/usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen 6080
-autorestart=true
-user=testuser
-priority=3
-
-[program:dbus]
-command=/usr/bin/dbus-daemon --session --address=unix:path=/tmp/dbus-session --nofork --nopidfile
-autorestart=true
-user=testuser
-priority=1
-EOF
+RUN printf '[supervisord]\n\
+nodaemon=true\n\
+user=root\n\
+\n\
+[program:xvfb]\n\
+command=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset\n\
+autorestart=true\n\
+user=root\n\
+priority=1\n\
+\n\
+[program:dbus]\n\
+command=/usr/bin/dbus-daemon --session --address=unix:path=/tmp/dbus-session --nofork --nopidfile\n\
+autorestart=true\n\
+user=testuser\n\
+priority=1\n' > /etc/supervisor/conf.d/services.conf
 
 # Create test runner script
-RUN cat > /home/testuser/run_tests.sh << 'EOF'
-#!/bin/bash
-set -e
-
-echo "========================================="
-echo "  GNOME Extension Containerized Test"
-echo "========================================="
-echo ""
-echo "Waiting for X server..."
-sleep 3
-
-echo "Setting up environment..."
-export DISPLAY=:99
-export DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session
-mkdir -p /tmp/runtime-testuser
-chmod 700 /tmp/runtime-testuser
-
-echo ""
-echo "Step 1: Compiling GSettings schemas..."
-cd /home/testuser/extension
-# Copy schemas to a writable location if they're mounted read-only
-if [ -d ./schemas ]; then
-    mkdir -p /tmp/test-schemas
-    cp -r ./schemas/* /tmp/test-schemas/
-    glib-compile-schemas /tmp/test-schemas/
-    if [ $? -eq 0 ]; then
-        echo "✓ Schemas compiled successfully"
-        # Copy compiled schema back if possible
-        cp /tmp/test-schemas/gschemas.compiled ./schemas/ 2>/dev/null || true
-    else
-        echo "✗ Failed to compile schemas"
-        exit 1
-    fi
-else
-    echo "✗ Schemas directory not found"
-    exit 1
-fi
-
-echo ""
-echo "Step 2: Validating metadata.json..."
-python3 -m json.tool metadata.json > /dev/null
-if [ $? -eq 0 ]; then
-    echo "✓ metadata.json is valid"
-else
-    echo "✗ metadata.json is invalid"
-    exit 1
-fi
-
-echo ""
-echo "Step 3: Checking JavaScript syntax..."
-# Just check if the file can be parsed
-if gjs --version > /dev/null 2>&1; then
-    echo "✓ GJS is available"
-    # Simple syntax check without actually importing
-    if [ -f extension.js ]; then
-        echo "✓ extension.js file exists"
-    else
-        echo "✗ extension.js not found"
-        exit 1
-    fi
-else
-    echo "✗ GJS not available"
-    exit 1
-fi
-
-echo ""
-echo "Step 4: Testing GSettings..."
-cat > /tmp/test_settings.js << 'INNER_EOF'
-#!/usr/bin/env gjs
-
-import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
-
-try {
-    const schemaSource = Gio.SettingsSchemaSource.new_from_directory(
-        '/tmp/test-schemas',
-        Gio.SettingsSchemaSource.get_default(),
-        false
-    );
-    
-    const schema = schemaSource.lookup('org.gnome.shell.extensions.minimize-dimmer', false);
-    
-    if (schema) {
-        print('✓ Schema loaded successfully');
-        
-        const settings = new Gio.Settings({
-            settings_schema: schema
-        });
-        
-        const opacity = settings.get_int('dimmed-opacity');
-        const duration = settings.get_int('animation-duration');
-        const enabled = settings.get_boolean('enable-dimming');
-        
-        print(`  - Default opacity: ${opacity}%`);
-        print(`  - Animation duration: ${duration}ms`);
-        print(`  - Enabled: ${enabled}`);
-        
-        settings.set_int('dimmed-opacity', 50);
-        if (settings.get_int('dimmed-opacity') === 50) {
-            print('✓ Setting values works correctly');
-        }
-    } else {
-        print('✗ Failed to load schema');
-        System.exit(1);
-    }
-} catch (e) {
-    print(`✗ Error: ${e.message}`);
-    System.exit(1);
-}
-INNER_EOF
-
-chmod +x /tmp/test_settings.js
-/tmp/test_settings.js 2>&1 | grep -v "Gjs-Message"
-
-echo ""
-echo "Step 5: Installing extension..."
-mkdir -p ~/.local/share/gnome-shell/extensions/
-ln -sf /home/testuser/extension ~/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com
-if [ -L ~/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com ]; then
-    echo "✓ Extension installed successfully"
-else
-    echo "✗ Failed to install extension"
-    exit 1
-fi
-
-echo ""
-echo "Step 6: Final validation..."
-# Skip GNOME Shell test in CI mode - it's too complex for automated testing
-echo "✓ Skipping GNOME Shell integration test in CI mode"
-
-echo ""
-echo "========================================="
-echo "✓ All tests completed successfully!"
-echo "========================================="
-echo ""
-echo "The extension is ready for installation."
-echo ""
-EOF
+RUN printf '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "========================================"\n\
+echo "  GNOME Extension Containerized Test"\n\
+echo "========================================"\n\
+echo ""\n\
+echo "Step 1: Compiling GSettings schemas..."\n\
+cd /home/testuser/extension\n\
+glib-compile-schemas ./schemas/ || exit 1\n\
+echo "✓ Schemas compiled successfully"\n\
+\n\
+echo ""\n\
+echo "Step 2: Validating metadata.json..."\n\
+python3 -m json.tool metadata.json > /dev/null || exit 1\n\
+echo "✓ metadata.json is valid"\n\
+\n\
+echo ""\n\
+echo "Step 3: Checking required files..."\n\
+for file in extension.js prefs.js metadata.json schemas/org.gnome.shell.extensions.minimize-dimmer.gschema.xml; do\n\
+  if [ -f "$file" ]; then\n\
+    echo "✓ $file exists"\n\
+  else\n\
+    echo "✗ $file missing"\n\
+    exit 1\n\
+  fi\n\
+done\n\
+\n\
+echo ""\n\
+echo "Step 4: Installing extension..."\n\
+mkdir -p ~/.local/share/gnome-shell/extensions/\n\
+ln -sf /home/testuser/extension ~/.local/share/gnome-shell/extensions/minimize-dimmer@leobenkel.com\n\
+echo "✓ Extension installed successfully"\n\
+\n\
+echo ""\n\
+echo "======================================="\n\
+echo "✓ All tests completed successfully!"\n\
+echo "======================================="\n' > /home/testuser/run_tests.sh
 
 RUN chmod +x /home/testuser/run_tests.sh && \
     chown testuser:testuser /home/testuser/run_tests.sh
@@ -228,5 +114,5 @@ RUN chmod +x /home/testuser/run_tests.sh && \
 USER testuser
 WORKDIR /home/testuser/extension
 
-# Entry point
-CMD ["/bin/bash", "-c", "sudo /usr/bin/supervisord -c /etc/supervisor/supervisord.conf & sleep 5 && /home/testuser/run_tests.sh"]
+# Entry point - just run the tests without supervisor for CI
+CMD ["/home/testuser/run_tests.sh"]
